@@ -1,405 +1,621 @@
-# How to Use StackedBarWithLine Chart
+# How This Project Works
 
-## Step 1: Import the Component
+This document explains the architecture, data flow, and inner workings of the To-Do List application.
 
-```typescript
-import StackedBarWithLine1 from '@/components/mf/charts/StackedBarwithLine1';
+## 📋 Table of Contents
+
+1. [Project Architecture](#project-architecture)
+2. [Data Flow](#data-flow)
+3. [File System Operations](#file-system-operations)
+4. [API Routes](#api-routes)
+5. [Components Breakdown](#components-breakdown)
+6. [User Interactions Flow](#user-interactions-flow)
+7. [State Management](#state-management)
+
+---
+
+## 🏗️ Project Architecture
+
+### Overview
+
+This is a **Next.js 14** application using the **App Router** architecture. The project follows a client-server pattern where:
+
+- **Client Components** (`'use client'`) handle user interactions and UI updates
+- **Server Components** (default) handle data fetching and server-side logic
+- **API Routes** act as the backend, handling CRUD operations on the JSON file
+
+### Technology Stack
+
+```
+┌─────────────────────────────────────────┐
+│         Next.js 14 (App Router)         │
+├─────────────────────────────────────────┤
+│  TypeScript  │  Tailwind CSS  │  React │
+├─────────────────────────────────────────┤
+│         Framer Motion (Animations)      │
+├─────────────────────────────────────────┤
+│      JSON File System (Database)        │
+└─────────────────────────────────────────┘
 ```
 
 ---
 
-## Step 2: Create a Hook for API Call
+## 🔄 Data Flow
 
-Create a hooks file (e.g., `hooks/ChartApi.ts`):
+### High-Level Flow
 
-```typescript
-import { useApi } from "../../api-base";  // Adjust path based on your folder structure
-import Endpoint from "@/common/endpoint";
-
-export const useGetChartData = (
-  payload: {
-    package_name: string;
-    start_date?: Date | string;
-    end_date?: Date | string;
-    frequency?: string;
-  },
-  enabled: boolean = true
-) => {
-  return useApi<any[]>(
-    `${process.env.NEXT_PUBLIC_YOUR_API_BASE}/your-endpoint`,
-    "POST",
-    payload,
-    {
-      queryKey: [
-        "getChartData", 
-        payload.package_name, 
-        payload.start_date?.toString() || "", 
-        payload.end_date?.toString() || ""
-      ],
-      enabled,
-      refetchOnMount: true,
-    }
-  );
-};
 ```
+User Action → Client Component → API Route → File System → JSON File
+                ↓
+         Update UI State
+                ↓
+         Re-render Components
+```
+
+### Detailed Flow Example: Adding a Task
+
+1. **User types** in the input field and clicks "Add" button
+2. **`app/page.tsx`** (Client Component) captures the form submission
+3. **POST request** is sent to `/api/todos` with the task title
+4. **API Route** (`app/api/todos/route.ts`) receives the request
+5. **`lib/todos.ts`** functions are called:
+   - `getTodos()` reads the current JSON file
+   - `getNextId()` generates a new unique ID
+   - New todo object is created
+   - `saveTodos()` writes the updated array back to JSON
+6. **API returns** the newly created todo
+7. **Client updates** local state with the new todo
+8. **React re-renders** the UI to show the new task
 
 ---
 
-## Step 3: Use the Hook in Your Component
+## 💾 File System Operations
 
-```typescript
-"use client";
-import React, { useState, useEffect } from "react";
-import StackedBarWithLine1 from '@/components/mf/charts/StackedBarwithLine1';
-import { useGetChartData } from "./hooks/ChartApi";
-import { usePackage } from "@/components/mf/PackageContext";
-import { useDateRange } from "@/components/mf/DateRangeContext";
+### Location
 
-const MyPage = () => {
-  // Get context values
-  const { selectedPackage } = usePackage();
-  const { startDate, endDate } = useDateRange();
-  
-  // State for chart data
-  const [chartData, setChartData] = useState<any[]>([]);
-  
-  // Prepare API payload
-  const chartPayload = {
-    package_name: selectedPackage || "",
-    start_date: startDate,
-    end_date: endDate,
-    frequency: "daily",
-  };
-  
-  // Check if we have valid data
-  const hasValidPackage = !!selectedPackage;
-  
-  // Call the hook
-  const { data: chartApiData, isLoading, refetch } = useGetChartData(
-    chartPayload,
-    hasValidPackage
-  );
-  
-  // Transform API response to chart data format
-  useEffect(() => {
-    if (chartApiData && Array.isArray(chartApiData)) {
-      const mappedData = chartApiData.map((item: any) => ({
-        month: item.month || item.date || item.week,  // X-axis value
-        "Total Count": item.total_count || 0,        // Bar value 1
-        "Fraud Count": item.fraud_count || 0,        // Bar value 2 (stacks on top)
-        "Fraud %": typeof item.fraud_percentage === "string" 
-          ? parseFloat(item.fraud_percentage.replace("%", "")) 
-          : item.fraud_percentage || 0,               // Line value (must be number)
-      }));
-      setChartData(mappedData);
-    } else {
-      setChartData([]);
-    }
-  }, [chartApiData]);
-  
-  // Chart configuration
-  const chartConfig = {
-    "Total Count": { 
-      label: "Valid Count", 
-      color: "#00A86B" 
-    },
-    "Fraud Count": { 
-      label: "Invalid Count", 
-      color: "#FF0000" 
-    },
-    "Fraud %": { 
-      label: "Invalid %", 
-      color: "#b91c1c" 
-    },
-  };
+All todos are stored in: `/data/todos.json`
 
-  return (
-    <StackedBarWithLine1
-      chartData={chartData}
-      chartConfig={chartConfig}
-      isLoading={isLoading}
-      isLegend={true}
-      isHorizontal={false}
-      xAxisConfig={{
-        dataKey: "month",
-        tickLine: false,
-        tickMargin: 10,
-        axisLine: false,
-        tickFormatter: (value: string) => value,
-        textAnchor: "middle",
-        dy: 10,
-      }}
-      YAxis1={{
-        yAxisId: "left",
-        orientation: "left",
-        stroke: "hsl(var(--chart-1))",
-      }}
-      YAxis2={{
-        yAxisId: "right",
-        orientation: "right",
-        stroke: "hsl(var(--chart-3))",
-      }}
-      onExpand={() => {}}
-    />
-  );
-};
+### Data Structure
 
-export default MyPage;
-```
-
----
-
-## Component Props Explained
-
-### Required Props
-
-| Prop | Type | Description | Example |
-|------|------|-------------|---------|
-| `chartData` | `any[]` | Array of data objects for the chart | `[{month: "Jan", "Total Count": 100, ...}]` |
-| `chartConfig` | `Object` | Configuration mapping data keys to labels and colors | `{"Total Count": {label: "...", color: "..."}}` |
-| `onExpand` | `() => void` | Callback function (can be empty) | `() => {}` |
-
-### Important Optional Props
-
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `isLoading` | `boolean` | `false` | Shows loading spinner when `true` |
-| `isLegend` | `boolean` | `true` | Shows/hides the legend |
-| `isHorizontal` | `boolean` | `false` | Chart orientation (`false` = vertical) |
-| `xAxisConfig` | `Object` | - | X-axis configuration (see below) |
-| `YAxis1` | `Object` | - | Left Y-axis configuration (for bars) |
-| `YAxis2` | `Object` | - | Right Y-axis configuration (for line) |
-
-### X-Axis Configuration
-
-```typescript
-xAxisConfig={{
-  dataKey: "month",              // Key from your data object for X-axis
-  tickLine: false,                // Show/hide tick lines
-  tickMargin: 10,                 // Margin for ticks
-  axisLine: false,                // Show/hide axis line
-  tickFormatter: (value: string) => value,  // Format tick labels
-  textAnchor: "middle",           // Text alignment
-  dy: 10,                         // Vertical offset
-}}
-```
-
-### Y-Axis Configuration
-
-**Left Y-Axis (for stacked bars):**
-```typescript
-YAxis1={{
-  yAxisId: "left",
-  orientation: "left",
-  stroke: "hsl(var(--chart-1))",
-}}
-```
-
-**Right Y-Axis (for line chart):**
-```typescript
-YAxis2={{
-  yAxisId: "right",
-  orientation: "right",
-  stroke: "hsl(var(--chart-3))",
-}}
-```
-
----
-
-## Data Format
-
-### Chart Data Structure
-
-Each object in the `chartData` array represents one point on the chart:
-
-```typescript
+```json
 [
   {
-    month: "January",           // X-axis value (can be any key name)
-    "Total Count": 100,         // Bar value 1 (left Y-axis)
-    "Fraud Count": 20,          // Bar value 2 (stacks on top, left Y-axis)
-    "Fraud %": 20.0             // Line value (right Y-axis, must be number)
+    "id": 1,
+    "title": "Buy groceries",
+    "completed": false
   },
   {
-    month: "February",
-    "Total Count": 150,
-    "Fraud Count": 30,
-    "Fraud %": 20.0
+    "id": 2,
+    "title": "Finish homework",
+    "completed": true
   }
 ]
 ```
 
-### Chart Config Structure
+### How File Operations Work
 
-The `chartConfig` object maps data keys to display labels and colors:
+The `lib/todos.ts` file contains utility functions:
 
+#### `getTodos(): Promise<Todo[]>`
+- Reads the JSON file from the file system
+- Parses the JSON content
+- Returns an array of todos
+- Returns empty array if file doesn't exist (graceful error handling)
+
+#### `saveTodos(todos: Todo[]): Promise<void>`
+- Ensures the `/data` directory exists (creates if needed)
+- Converts the todos array to JSON string
+- Writes to the file system
+- Handles file system errors
+
+#### `getNextId(): Promise<number>`
+- Reads all todos
+- Finds the maximum ID
+- Returns `maxId + 1`
+- Returns `1` if no todos exist
+
+### Important Notes
+
+⚠️ **File System Limitations:**
+- Works perfectly in development (local file system)
+- **Won't persist in production** on serverless platforms like Vercel
+- For production, you need a real database (PostgreSQL, MongoDB, etc.)
+
+---
+
+## 🔌 API Routes
+
+### Location
+
+All API routes are in: `/app/api/todos/route.ts`
+
+### Route Handlers
+
+Next.js 14 uses **Route Handlers** which export HTTP method functions.
+
+#### 1. GET `/api/todos`
+
+**Purpose:** Fetch all todos
+
+**Flow:**
+```typescript
+GET request → getTodos() → Read JSON file → Return todos array
+```
+
+**Response:**
+```json
+[
+  { "id": 1, "title": "Task 1", "completed": false },
+  { "id": 2, "title": "Task 2", "completed": true }
+]
+```
+
+#### 2. POST `/api/todos`
+
+**Purpose:** Create a new todo
+
+**Request Body:**
+```json
+{
+  "title": "New task"
+}
+```
+
+**Flow:**
+```typescript
+POST request → Validate title → getTodos() → getNextId() 
+→ Create new todo → saveTodos() → Return new todo
+```
+
+**Response:**
+```json
+{
+  "id": 3,
+  "title": "New task",
+  "completed": false
+}
+```
+
+#### 3. PUT `/api/todos`
+
+**Purpose:** Update an existing todo
+
+**Request Body:**
+```json
+{
+  "id": 1,
+  "title": "Updated title",  // Optional
+  "completed": true           // Optional
+}
+```
+
+**Flow:**
+```typescript
+PUT request → Validate ID → getTodos() → Find todo by ID 
+→ Update properties → saveTodos() → Return updated todo
+```
+
+**Response:**
+```json
+{
+  "id": 1,
+  "title": "Updated title",
+  "completed": true
+}
+```
+
+#### 4. DELETE `/api/todos?id={id}`
+
+**Purpose:** Delete a todo
+
+**Query Parameter:** `id` (the todo ID to delete)
+
+**Flow:**
+```typescript
+DELETE request → Extract ID from query → getTodos() 
+→ Filter out todo with matching ID → saveTodos() → Return success
+```
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+---
+
+## 🧩 Components Breakdown
+
+### 1. `app/page.tsx` (Main Page)
+
+**Type:** Client Component (`'use client'`)
+
+**Responsibilities:**
+- Manages the todos state
+- Handles all user interactions (add, edit, delete, toggle)
+- Fetches todos on component mount
+- Renders the main UI layout
+- Displays task count
+
+**Key State:**
+```typescript
+const [todos, setTodos] = useState<Todo[]>([])      // All tasks
+const [newTask, setNewTask] = useState('')           // Input value
+const [loading, setLoading] = useState(true)         // Loading state
+```
+
+**Key Functions:**
+- `fetchTodos()` - Loads todos from API on mount
+- `handleAddTask()` - Creates new task
+- `handleToggle()` - Toggles completion status
+- `handleEdit()` - Updates task title
+- `handleDelete()` - Removes task
+
+### 2. `components/TaskItem.tsx` (Individual Task)
+
+**Type:** Client Component
+
+**Props:**
 ```typescript
 {
-  "Total Count": { 
-    label: "Valid Count",      // What shows in legend
-    color: "#00A86B"           // Color for this bar
-  },
-  "Fraud Count": { 
-    label: "Invalid Count", 
-    color: "#FF0000" 
-  },
-  "Fraud %": { 
-    label: "Invalid %", 
-    color: "#b91c1c"          // Color for the line
-  },
+  todo: Todo              // The task data
+  onToggle: (id) => void  // Callback to toggle completion
+  onEdit: (id, title) => void  // Callback to edit title
+  onDelete: (id) => void  // Callback to delete task
 }
 ```
 
-**Important Rules:**
-- Keys in `chartConfig` must match keys in your `chartData` objects
-- The percentage key (e.g., `"Fraud %"`) will be used for the **line chart** (right Y-axis)
-- Other keys will be used for **stacked bars** (left Y-axis)
-- Percentage values must be **numbers**, not strings (e.g., `20.0` not `"20%"`)
+**Features:**
+- Displays task title with strike-through when completed
+- Check circle button for toggling completion
+- Edit button (pencil icon) for inline editing
+- Delete button (trash icon) for removing task
+- Hover effects showing action buttons
+- Inline editing with input field
+- Keyboard support (Enter to save, Escape to cancel)
+
+**State:**
+```typescript
+const [isEditing, setIsEditing] = useState(false)
+const [editTitle, setEditTitle] = useState(todo.title)
+```
+
+### 3. `components/EmptyState.tsx` (Empty State)
+
+**Type:** Regular Component (no client directive needed)
+
+**Purpose:** Shows a friendly message when there are no tasks
+
+**Features:**
+- Glassmorphism card with icon
+- Helpful message encouraging user to add tasks
+
+### 4. `app/layout.tsx` (Root Layout)
+
+**Type:** Server Component (default)
+
+**Purpose:**
+- Wraps all pages
+- Sets up HTML structure
+- Imports global CSS
+- Defines metadata (title, description)
 
 ---
 
-## API Data Transformation
+## 👆 User Interactions Flow
 
-### Sending Data to API
+### Adding a Task
 
-The payload you send to your API hook:
-
-```typescript
-const chartPayload = {
-  package_name: selectedPackage || "",
-  start_date: startDate,
-  end_date: endDate,
-  frequency: "daily",  // or "weekly", "monthly"
-};
+```
+1. User types in input field
+   ↓
+2. User clicks "Add" button or presses Enter
+   ↓
+3. handleAddTask() is called
+   ↓
+4. POST /api/todos with { title: "..." }
+   ↓
+5. API creates todo and saves to JSON
+   ↓
+6. New todo returned to client
+   ↓
+7. setTodos([...todos, newTodo]) updates state
+   ↓
+8. UI re-renders showing new task
 ```
 
-### Receiving and Transforming API Response
+### Editing a Task
 
-Transform the API response to match the chart data format:
-
-```typescript
-useEffect(() => {
-  if (chartApiData && Array.isArray(chartApiData)) {
-    const mappedData = chartApiData.map((item: any) => ({
-      // X-axis value (adjust based on your API response)
-      month: item.month || item.date || item.week,
-      
-      // Bar values (adjust based on your API response)
-      "Total Count": item.total_count || 0,
-      "Fraud Count": item.fraud_count || 0,
-      
-      // Line value - must convert string percentages to numbers
-      "Fraud %": typeof item.fraud_percentage === "string"
-        ? parseFloat(item.fraud_percentage.replace("%", ""))
-        : item.fraud_percentage || 0,
-    }));
-    
-    setChartData(mappedData);
-  } else {
-    setChartData([]);
-  }
-}, [chartApiData]);
+```
+1. User hovers over task (shows edit icon)
+   ↓
+2. User clicks edit icon
+   ↓
+3. TaskItem enters edit mode (isEditing = true)
+   ↓
+4. Input field appears with current title
+   ↓
+5. User modifies text
+   ↓
+6. User presses Enter or clicks outside
+   ↓
+7. handleEdit() is called with new title
+   ↓
+8. PUT /api/todos with { id, title }
+   ↓
+9. API updates JSON file
+   ↓
+10. Updated todo returned
+   ↓
+11. State updated, UI re-renders
 ```
 
-### Common API Response Formats
+### Toggling Completion
 
-**Format 1: Separate fields**
-```typescript
-// API returns:
-{ month: "2024-01", total_count: 100, fraud_count: 20, fraud_percentage: "20%" }
-
-// Transform to:
-{ month: "2024-01", "Total Count": 100, "Fraud Count": 20, "Fraud %": 20.0 }
+```
+1. User clicks check circle
+   ↓
+2. handleToggle() is called
+   ↓
+3. PUT /api/todos with { id, completed: !currentStatus }
+   ↓
+4. API updates JSON file
+   ↓
+5. Updated todo returned
+   ↓
+6. State updated
+   ↓
+7. Framer Motion animates strike-through
+   ↓
+8. Task opacity changes (fade effect)
 ```
 
-**Format 2: Combined count**
-```typescript
-// API returns:
-{ date: "2024-01-01", clean_count: 80, fraud_count: 20, fraud_percentage: 20.0 }
+### Deleting a Task
 
-// Transform to:
-{ 
-  month: "2024-01-01", 
-  "Total Count": 100,  // clean_count + fraud_count
-  "Fraud Count": 20, 
-  "Fraud %": 20.0 
+```
+1. User hovers over task (shows delete icon)
+   ↓
+2. User clicks delete icon
+   ↓
+3. handleDelete() is called
+   ↓
+4. DELETE /api/todos?id={id}
+   ↓
+5. API removes todo from JSON file
+   ↓
+6. Success response returned
+   ↓
+7. setTodos(todos.filter(t => t.id !== id))
+   ↓
+8. Framer Motion animates exit
+   ↓
+9. Task disappears from UI
+```
+
+---
+
+## 🎨 State Management
+
+### Client-Side State
+
+The app uses **React's useState** for state management. No external state library needed for this simple app.
+
+**State Locations:**
+
+1. **`app/page.tsx`** - Main state container
+   - `todos` - Array of all tasks (source of truth)
+   - `newTask` - Input field value
+   - `loading` - Loading indicator
+
+2. **`components/TaskItem.tsx`** - Local UI state
+   - `isEditing` - Whether task is in edit mode
+   - `editTitle` - Temporary edit value
+
+### Data Synchronization
+
+- **Initial Load:** `useEffect` fetches todos on mount
+- **After Mutations:** State is updated optimistically after API calls
+- **No Real-time Sync:** Changes are saved immediately, no polling needed
+
+### State Flow Diagram
+
+```
+┌─────────────────┐
+│   JSON File     │  (Source of Truth)
+└────────┬────────┘
+         │
+         │ GET /api/todos
+         ↓
+┌─────────────────┐
+│  todos state    │  (Client State)
+│  (page.tsx)     │
+└────────┬────────┘
+         │
+         ├──→ TaskItem (props)
+         ├──→ EmptyState (conditional)
+         └──→ Task Count Display
+```
+
+---
+
+## 🎭 Styling & Animations
+
+### Tailwind CSS
+
+- **Utility-first** approach
+- **Custom glass class** in `globals.css` for glassmorphism
+- **Responsive** breakpoints (sm:, lg:)
+- **Gradient background** applied to body
+
+### Framer Motion
+
+Used for smooth animations:
+
+- **Task items:** Fade in on mount, slide out on delete
+- **Check mark:** Scale animation when toggling
+- **Strike-through:** Smooth text-decoration transition
+- **Buttons:** Hover scale effects
+
+### Glassmorphism Effect
+
+```css
+.glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 ```
 
+This creates a frosted glass effect with:
+- Semi-transparent background
+- Blur effect behind the element
+- Subtle border for definition
+
 ---
 
-## Complete Working Example
+## 🔐 Type Safety
+
+### TypeScript Interfaces
+
+**`types/todo.ts`** defines the data structure:
 
 ```typescript
-"use client";
-import React, { useState, useEffect } from "react";
-import StackedBarWithLine1 from '@/components/mf/charts/StackedBarwithLine1';
-import { useGetChartData } from "./hooks/ChartApi";
-import { usePackage } from "@/components/mf/PackageContext";
-import { useDateRange } from "@/components/mf/DateRangeContext";
-
-const MyPage = () => {
-  const { selectedPackage } = usePackage();
-  const { startDate, endDate } = useDateRange();
-  const [chartData, setChartData] = useState<any[]>([]);
-
-  const chartPayload = {
-    package_name: selectedPackage || "",
-    start_date: startDate,
-    end_date: endDate,
-  };
-
-  const { data: chartApiData, isLoading } = useGetChartData(
-    chartPayload,
-    !!selectedPackage
-  );
-
-  useEffect(() => {
-    if (chartApiData && Array.isArray(chartApiData)) {
-      const mappedData = chartApiData.map((item: any) => ({
-        month: item.month,
-        "Total Count": item.total_count || 0,
-        "Fraud Count": item.fraud_count || 0,
-        "Fraud %": parseFloat((item.fraud_percentage || "0").replace("%", "")),
-      }));
-      setChartData(mappedData);
-    }
-  }, [chartApiData]);
-
-  const chartConfig = {
-    "Total Count": { label: "Valid Count", color: "#00A86B" },
-    "Fraud Count": { label: "Invalid Count", color: "#FF0000" },
-    "Fraud %": { label: "Invalid %", color: "#b91c1c" },
-  };
-
-  return (
-    <StackedBarWithLine1
-      chartData={chartData}
-      chartConfig={chartConfig}
-      isLoading={isLoading}
-      isLegend={true}
-      xAxisConfig={{ dataKey: "month" }}
-      YAxis1={{ yAxisId: "left", orientation: "left", stroke: "hsl(var(--chart-1))" }}
-      YAxis2={{ yAxisId: "right", orientation: "right", stroke: "hsl(var(--chart-3))" }}
-      onExpand={() => {}}
-    />
-  );
-};
-
-export default MyPage;
+export interface Todo {
+  id: number
+  title: string
+  completed: boolean
+}
 ```
+
+This ensures:
+- Type checking across the entire app
+- IntelliSense/autocomplete in IDE
+- Compile-time error detection
+- Self-documenting code
 
 ---
 
-## Quick Checklist
+## 🚀 Build Process
 
-- [ ] Import `StackedBarWithLine1` component
-- [ ] Create hook file with `useApi` for API call
-- [ ] Create `chartData` state
-- [ ] Create `chartConfig` object
-- [ ] Call hook with payload and enabled condition
-- [ ] Transform API response in `useEffect`
-- [ ] Match keys between `chartData` and `chartConfig`
-- [ ] Convert percentages to numbers (not strings)
-- [ ] Set `xAxisConfig.dataKey` to match your data key
-- [ ] Include both `YAxis1` and `YAxis2` props
+### Development
+
+```bash
+npm run dev
+```
+
+- Next.js dev server starts
+- Hot module replacement enabled
+- TypeScript compiled on-the-fly
+- Tailwind CSS processed
+
+### Production Build
+
+```bash
+npm run build
+npm start
+```
+
+- TypeScript compiled
+- React components optimized
+- CSS minified
+- Static assets optimized
+- Server ready for production
+
+---
+
+## 📝 Key Design Decisions
+
+### Why Client Components for Main Page?
+
+- Need interactivity (form submission, button clicks)
+- Need state management (todos array)
+- Need event handlers
+
+### Why API Routes?
+
+- Separation of concerns
+- Can be easily replaced with database later
+- Standard REST API pattern
+- Easy to test
+
+### Why JSON File?
+
+- Simple for learning/demo
+- No database setup required
+- Easy to inspect/debug
+- Perfect for small projects
+
+### Why Framer Motion?
+
+- Smooth, professional animations
+- Easy to use
+- Great performance
+- Enhances user experience
+
+---
+
+## 🔍 Debugging Tips
+
+### Check JSON File
+
+```bash
+cat data/todos.json
+```
+
+### Check API Responses
+
+Open browser DevTools → Network tab → See API calls
+
+### Check Console
+
+Client-side errors appear in browser console
+Server-side errors appear in terminal
+
+### Common Issues
+
+1. **File not found:** Ensure `/data` folder exists
+2. **Permission errors:** Check file system permissions
+3. **CORS errors:** Not applicable (same-origin requests)
+4. **Type errors:** Run `npm run build` to see TypeScript errors
+
+---
+
+## 🎓 Learning Points
+
+This project demonstrates:
+
+- ✅ Next.js 14 App Router architecture
+- ✅ Client vs Server Components
+- ✅ API Route handlers
+- ✅ File system operations in Node.js
+- ✅ TypeScript type safety
+- ✅ React state management
+- ✅ Form handling
+- ✅ RESTful API design
+- ✅ Modern CSS with Tailwind
+- ✅ Animation libraries
+- ✅ Component composition
+- ✅ Error handling
+
+---
+
+## 🔄 Future Enhancements
+
+Potential improvements:
+
+1. **Database Integration:** Replace JSON with PostgreSQL/MongoDB
+2. **Authentication:** Add user accounts
+3. **Categories/Tags:** Organize tasks
+4. **Due Dates:** Add date functionality
+5. **Search/Filter:** Find tasks easily
+6. **Drag & Drop:** Reorder tasks
+7. **Local Storage:** Backup to browser storage
+8. **Dark/Light Mode:** Theme toggle
+9. **PWA:** Make it installable
+10. **Real-time Sync:** WebSocket for multi-user
+
+---
+
+**This architecture provides a solid foundation that can scale as your needs grow!** 🚀
+
